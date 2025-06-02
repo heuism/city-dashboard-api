@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from typing import List
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,23 +20,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-data: List[CityAndTemp] = [
-    CityAndTemp(city="Melbourne", temp=10),
-    CityAndTemp(city="Sydney", temp=20),
-    CityAndTemp(city="Ho Chi Minh", temp=30),
-    CityAndTemp(city="Adelaide", temp=10),
-    CityAndTemp(city="Queensland", temp=25),
-]
+def load_cities() -> List[CityAndTemp]:
+  if not file_path:
+    return []
+  with open(file_path) as f:
+    raw_data = json.load(f)
+    return [CityAndTemp(**city) for city in raw_data]
+  
+def save_cities(cities: List[CityAndTemp]):
+  with open(file_path, "w") as f:
+    json.dump([city.dict() for city in cities], f, indent=2)
+
+file_path = Path("cities.json")
+data: List[CityAndTemp] = []
+
+data = load_cities()
 
 @app.get("/cities")
 def get_cities(min: int = Query(0, description="Minimum value")):
     time.sleep(1.5)  # Simulate 1.5s delay
     
+    data = load_cities()
     
     return [city.dict() for city in data if city.temp >= min]
 
 @app.post("/cities")
 def add_cities(city: CityAndTemp):
     time.sleep(1.5)  # Simulate 1.5s delay
+    data = load_cities()
     data.append(city)
+    save_cities(data)
     return {"received": city}
