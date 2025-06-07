@@ -1,17 +1,25 @@
 import json
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 import time
 
+from sqlmodel import SQLModel, Field, Session, create_engine, select
 from pydantic import BaseModel
 
 app = FastAPI()
 
-class CityAndTemp(BaseModel):
+class CityAndTemp(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
     city: str
     temp: int
+
+sqlite_file = "cities.db"
+engine = create_engine(f"sqlite:///{sqlite_file}", echo=True)
+
+# Create the table if it doesn't exist
+SQLModel.metadata.create_all(engine)
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,18 +44,37 @@ data: List[CityAndTemp] = []
 
 data = load_cities()
 
+def seed_cities_to_db():
+    if not file_path.exists():
+        print("cities.json not found.")
+        return
+
+    with open(file_path) as f:
+        raw_data = json.load(f)
+        cities = [CityAndTemp(**city) for city in raw_data]
+
+        with Session(engine) as session:
+            session.add_all(cities)
+            session.commit()
+            print(f"✅ Seeded {len(cities)} cities into the database.")
+
 @app.get("/cities")
 def get_cities(min: int = Query(0, description="Minimum value")):
-    time.sleep(1.5)  # Simulate 1.5s delay
-    
-    data = load_cities()
-    
-    return [city.dict() for city in data if city.temp >= min]
+    with Session(engine) as session:
+        print(min)
+        statement = select(CityAndTemp).where(CityAndTemp.temp >= min)
+        results = session.exec(statement).all()
+        return results
 
 @app.post("/cities")
 def add_cities(city: CityAndTemp):
-    time.sleep(1.5)  # Simulate 1.5s delay
-    data = load_cities()
-    data.append(city)
-    save_cities(data)
-    return {"received": city}
+    with Session(engine) as session:
+        session.add(city)
+        session.commit()
+        session.refresh(city)
+        
+        cities = session.exec(select(CityAndTemp)).all()
+        return cities
+      
+if __name__ == "__main__":
+    seed_cities_to_db()
